@@ -26,6 +26,10 @@ import com.google.common.primitives.Shorts;
 
 public class BytesUtil {
 
+    private BytesUtil() {
+        throw new IllegalStateException("Class BytesUtil is an utility class !");
+    }
+
     public static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     public static void writeByte(byte num, byte[] bytes, int offset, int size) {
@@ -177,6 +181,22 @@ public class BytesUtil {
         byte[] r = new byte[end - start];
         System.arraycopy(bytes, start, r, 0, r.length);
         return r;
+    }
+
+    public static byte[] mergeBytes(byte[] bytes1, byte[] bytes2) {
+        if (bytes1 == null && bytes2 == null) {
+            throw new NullPointerException();
+        }
+        if (bytes1 == null) {
+            return bytes2;
+        }
+        if (bytes2 == null) {
+            return bytes1;
+        }
+        byte[] bytes = new byte[bytes1.length + bytes2.length];
+        System.arraycopy(bytes1, 0, bytes, 0, bytes1.length);
+        System.arraycopy(bytes2, 0, bytes, bytes1.length, bytes2.length);
+        return bytes;
     }
 
     public static int compareBytes(byte[] src, int srcOffset, byte[] dst, int dstOffset, int length) {

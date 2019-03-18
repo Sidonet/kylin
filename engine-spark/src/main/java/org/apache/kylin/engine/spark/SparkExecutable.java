@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.Shell;
 import org.apache.kylin.common.KylinConfig;
 import org.apache.kylin.common.KylinConfigExt;
@@ -189,12 +190,14 @@ public class SparkExecutable extends AbstractExecutable {
 
     }
 
+    @SuppressWarnings("checkstyle:methodlength")
     @Override
     protected ExecuteResult doWork(ExecutableContext context) throws ExecuteException {
         ExecutableManager mgr = getManager();
         Map<String, String> extra = mgr.getOutput(getId()).getExtra();
-        if (extra.containsKey(ExecutableConstants.SPARK_JOB_ID)) {
-            return onResumed(extra.get(ExecutableConstants.SPARK_JOB_ID), mgr);
+        String sparkJobId = extra.get(ExecutableConstants.SPARK_JOB_ID);
+        if (!StringUtils.isEmpty(sparkJobId)) {
+            return onResumed(sparkJobId, mgr);
         } else {
             String cubeName = this.getParam(SparkCubingByLayer.OPTION_CUBE_NAME.getOpt());
             CubeInstance cube = CubeManager.getInstance(context.getConfig()).getCube(cubeName);
@@ -311,27 +314,31 @@ public class SparkExecutable extends AbstractExecutable {
 
                     throw new IllegalStateException();
                 }
-                // done, update all properties
-                Map<String, String> joblogInfo = patternedLogger.getInfo();
-
-                // read counter from hdfs
-                String counterOutput = getParam(BatchConstants.ARG_COUNTER_OUPUT);
-                if (counterOutput != null) {
-                    Map<String, String> counterMap = HadoopUtil.readFromSequenceFile(counterOutput);
-                    joblogInfo.putAll(counterMap);
-                }
-
-                readCounters(joblogInfo);
-                getManager().addJobInfo(getId(), joblogInfo);
 
                 if (result == null) {
                     result = future.get();
                 }
-
                 if (result != null && result.getFirst() == 0) {
+                    // done, update all properties
+                    Map<String, String> joblogInfo = patternedLogger.getInfo();
+                    // read counter from hdfs
+                    String counterOutput = getParam(BatchConstants.ARG_COUNTER_OUPUT);
+                    if (counterOutput != null) {
+                        if (HadoopUtil.getWorkingFileSystem().exists(new Path(counterOutput))) {
+                            Map<String, String> counterMap = HadoopUtil.readFromSequenceFile(counterOutput);
+                            joblogInfo.putAll(counterMap);
+                        } else {
+                            logger.warn("Spark counter output path not exists: " + counterOutput);
+                        }
+                    }
+                    readCounters(joblogInfo);
+                    getManager().addJobInfo(getId(), joblogInfo);
                     return new ExecuteResult(ExecuteResult.State.SUCCEED, patternedLogger.getBufferedLog());
                 }
-
+                // clear SPARK_JOB_ID on job failure.
+                extra = mgr.getOutput(getId()).getExtra();
+                extra.put(ExecutableConstants.SPARK_JOB_ID, "");
+                getManager().addJobInfo(getId(), extra);
                 return new ExecuteResult(ExecuteResult.State.ERROR, result != null ? result.getSecond() : "");
             } catch (Exception e) {
                 logger.error("error run spark job:", e);

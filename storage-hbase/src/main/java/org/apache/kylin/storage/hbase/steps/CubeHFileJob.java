@@ -51,6 +51,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Locale;
 
 import static org.apache.hadoop.hbase.HBaseConfiguration.merge;
 
@@ -84,7 +85,7 @@ public class CubeHFileJob extends AbstractHadoopJob {
             CubeInstance cube = cubeMgr.getCube(cubeName);
 
             // use current hbase configuration
-            Configuration configuration = HBaseConnection.getCurrentHBaseConfiguration();
+            Configuration configuration = new Configuration(HBaseConnection.getCurrentHBaseConfiguration());
             merge(configuration, getConf());
             job = Job.getInstance(configuration, getOptionValue(OPTION_JOB_NAME));
 
@@ -100,10 +101,10 @@ public class CubeHFileJob extends AbstractHadoopJob {
 
             Configuration hbaseConf = HBaseConfiguration.create(getConf());
 
-            String htable = getOptionValue(OPTION_HTABLE_NAME);
+            String hTableName = getOptionValue(OPTION_HTABLE_NAME).toUpperCase(Locale.ROOT);
             connection = ConnectionFactory.createConnection(hbaseConf);
-            Table table = connection.getTable(TableName.valueOf(htable));
-            RegionLocator regionLocator = connection.getRegionLocator(TableName.valueOf(htable));
+            Table table = connection.getTable(TableName.valueOf(hTableName));
+            RegionLocator regionLocator = connection.getRegionLocator(TableName.valueOf(hTableName));
             // Automatic config !
             HFileOutputFormat2.configureIncrementalLoad(job, table, regionLocator);
             reconfigurePartitions(hbaseConf, partitionFilePath);

@@ -34,6 +34,7 @@ import org.apache.kylin.cube.model.CubeDesc;
 import org.apache.kylin.cube.model.HBaseColumnDesc;
 import org.apache.kylin.cube.model.HBaseColumnFamilyDesc;
 import org.apache.kylin.gridtable.GTRecord;
+import org.apache.kylin.gridtable.GridTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -110,6 +111,11 @@ public class HBaseCuboidWriter implements ICuboidWriter {
         if (puts.size() >= BATCH_PUT_THRESHOLD) {
             flush();
         }
+    }
+
+    @Override
+    public void write(long cuboidId, GridTable table) throws IOException {
+        throw new UnsupportedOperationException();
     }
 
     @Override

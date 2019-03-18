@@ -60,6 +60,7 @@ public class FunctionDesc implements Serializable {
     public static final String FUNC_MAX = "MAX";
     public static final String FUNC_COUNT = "COUNT";
     public static final String FUNC_COUNT_DISTINCT = "COUNT_DISTINCT";
+    public static final String FUNC_GROUPING = "GROUPING";
     public static final String FUNC_PERCENTILE = "PERCENTILE_APPROX";
     public static final Set<String> BUILT_IN_AGGREGATIONS = Sets.newHashSet();
 
@@ -159,7 +160,7 @@ public class FunctionDesc implements Serializable {
             if (isMax() || isMin()) {
                 return parameter.getColRefs().get(0).getType();
             } else if (isSum()) {
-                return parameter.isColumnType() ? parameter.getColRefs().get(0).getType() : DataType.getType("bigint");
+                return parameter.isColumnType() ? DataType.getType(returnType) : DataType.getType("bigint");
             } else if (isCount()) {
                 return DataType.getType("bigint");
             } else {

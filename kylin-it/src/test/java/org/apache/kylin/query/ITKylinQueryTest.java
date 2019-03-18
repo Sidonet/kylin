@@ -245,6 +245,11 @@ public class ITKylinQueryTest extends KylinTestBase {
     }
 
     @Test
+    public void testUnionallQuery() throws Exception {
+        execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_unionall", null, true);
+    }
+
+    @Test
     public void testTimeStampAdd() throws Exception {
         execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_timestamp", null, true);
     }
@@ -261,22 +266,25 @@ public class ITKylinQueryTest extends KylinTestBase {
 
     @Test
     public void testDistinctCountQuery() throws Exception {
-        if ("left".equalsIgnoreCase(joinType)) {
-            batchExecuteQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_distinct");
-        }
+        batchExecuteQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_distinct");
     }
 
     @Test
     public void testTopNQuery() throws Exception {
-        if ("left".equalsIgnoreCase(joinType)) {
-            this.execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_topn", null, true);
-        }
+        this.execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_topn", null, true);
     }
 
     @Test
     public void testPreciselyDistinctCountQuery() throws Exception {
+        execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_distinct_precisely", null, true);
+    }
+
+    @Test
+    public void testPreciselyDistinctCountRollupQuery() throws Exception {
+        // the "inner" test cube uses "SegmentAppendTrieDictBuilder" which doesn't support rollup.
         if ("left".equalsIgnoreCase(joinType)) {
-            execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_distinct_precisely", null, true);
+            execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_distinct_precisely_rollup", null,
+                    true);
         }
     }
 
@@ -366,13 +374,18 @@ public class ITKylinQueryTest extends KylinTestBase {
                 new File(getQueryFolderPrefix() + "src/test/resources/query/sql_limit"), ".sql");
         for (File sqlFile : sqlFiles) {
             runSQL(sqlFile, false, false);
-            assertTrue(checkFinalPushDownLimit());
+            if (sqlFile.getAbsolutePath().contains("query06.sql")) {
+                assertTrue(!checkFinalPushDownLimit());
+            } else {
+                assertTrue(checkFinalPushDownLimit());
+            }
         }
     }
 
     @Test
     public void testLimitCorrectness() throws Exception {
         this.execLimitAndValidate(getQueryFolderPrefix() + "src/test/resources/query/sql");
+
     }
 
     @Test
@@ -456,8 +469,6 @@ public class ITKylinQueryTest extends KylinTestBase {
         execAndCompQuery(getQueryFolderPrefix() + "src/test/resources/query/sql_values", null, true);
     }
 
-
-
     @Test
     public void testPlan() throws Exception {
         String originProp = System.getProperty("calcite.debug");
@@ -467,4 +478,3 @@ public class ITKylinQueryTest extends KylinTestBase {
             System.setProperty("calcite.debug", "false");
     }
 }
-                                                  

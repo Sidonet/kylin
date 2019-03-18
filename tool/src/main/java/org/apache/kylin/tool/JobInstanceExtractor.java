@@ -83,7 +83,7 @@ public class JobInstanceExtractor extends AbstractInfoExtractor {
     protected void executeExtract(OptionsHelper optionsHelper, File exportDir) throws Exception {
         String cube = optionsHelper.hasOption(OPTION_CUBE) ? optionsHelper.getOptionValue(OPTION_CUBE) : null;
         String project = optionsHelper.hasOption(OPTION_PROJECT) ? optionsHelper.getOptionValue(OPTION_PROJECT) : null;
-        int period = optionsHelper.hasOption(OPTION_PERIOD) ? Integer.valueOf(optionsHelper.getOptionValue(OPTION_PERIOD)) : DEFAULT_PERIOD;
+        int period = optionsHelper.hasOption(OPTION_PERIOD) ? Integer.parseInt(optionsHelper.getOptionValue(OPTION_PERIOD)) : DEFAULT_PERIOD;
 
         long endTime = System.currentTimeMillis();
         long startTime = endTime - period * 24 * 3600 * 1000; // time in Millis
@@ -145,6 +145,7 @@ public class JobInstanceExtractor extends AbstractInfoExtractor {
         result.setType(CubeBuildTypeEnum.BUILD);
         result.setStatus(parseToJobStatus(output.getState()));
         result.setMrWaiting(AbstractExecutable.getExtraInfoAsLong(output, CubingJob.MAP_REDUCE_WAIT_TIME, 0L) / 1000);
+        result.setBuildInstance(AbstractExecutable.getBuildInstance(output));
         result.setExecStartTime(AbstractExecutable.getStartTime(output));
         result.setExecEndTime(AbstractExecutable.getEndTime(output));
         result.setExecInterruptTime(AbstractExecutable.getInterruptTime(output));

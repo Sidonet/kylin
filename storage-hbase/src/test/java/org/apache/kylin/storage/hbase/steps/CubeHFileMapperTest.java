@@ -18,6 +18,12 @@
 
 package org.apache.kylin.storage.hbase.steps;
 
+import static org.junit.Assert.assertEquals;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.io.Text;
@@ -27,12 +33,6 @@ import org.apache.kylin.engine.mr.common.BatchConstants;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * @author George Song (ysong1)
@@ -77,7 +77,6 @@ public class CubeHFileMapperTest {
         assertEquals("cf1", new String(copy(p2.getSecond()), StandardCharsets.UTF_8));
         assertEquals("item_count", new String(copy(p2.getSecond()), StandardCharsets.UTF_8));
         assertEquals("2", new String(copy(p2.getSecond()), StandardCharsets.UTF_8));
-
     }
 
     private byte[] copy(KeyValue kv) {

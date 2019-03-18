@@ -82,7 +82,7 @@ public class HBaseLookupMRSteps {
         KylinConfig kylinConfig = KylinConfig.getInstanceFromEnv();
         ExtTableSnapshotInfoManager extTableSnapshotInfoManager = ExtTableSnapshotInfoManager.getInstance(kylinConfig);
         TableDesc tableDesc = TableMetadataManager.getInstance(kylinConfig).getTableDesc(tableName, cube.getProject());
-        IReadableTable sourceTable = SourceManager.createReadableTable(tableDesc);
+        IReadableTable sourceTable = SourceManager.createReadableTable(tableDesc, context.getJobFlow().getId());
         try {
             ExtTableSnapshotInfo latestSnapshot = extTableSnapshotInfoManager.getLatestSnapshot(
                     sourceTable.getSignature(), tableName);
@@ -163,7 +163,7 @@ public class HBaseLookupMRSteps {
     }
 
     public void appendMapReduceParameters(StringBuilder buf) {
-        appendMapReduceParameters(buf, JobEngineConfig.DEFAUL_JOB_CONF_SUFFIX);
+        appendMapReduceParameters(buf, JobEngineConfig.DEFAULT_JOB_CONF_SUFFIX);
     }
 
     public void appendMapReduceParameters(StringBuilder buf, String jobType) {

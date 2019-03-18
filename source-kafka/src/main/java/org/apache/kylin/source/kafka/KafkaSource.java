@@ -71,7 +71,7 @@ public class KafkaSource implements ISource {
     }
 
     @Override
-    public IReadableTable createReadableTable(TableDesc tableDesc) {
+    public IReadableTable createReadableTable(TableDesc tableDesc, String uuid) {
         throw new UnsupportedOperationException();
     }
 
@@ -237,6 +237,12 @@ public class KafkaSource implements ISource {
 
             @Override
             public ColumnDesc[] evalQueryMetadata(String query) {
+                throw new UnsupportedOperationException();
+            }
+
+
+            @Override
+            public void validateSQL(String query) throws Exception {
                 throw new UnsupportedOperationException();
             }
         };

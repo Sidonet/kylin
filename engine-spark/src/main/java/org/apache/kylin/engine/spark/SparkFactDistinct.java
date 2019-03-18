@@ -63,6 +63,7 @@ import org.apache.kylin.cube.DimensionRangeInfo;
 import org.apache.kylin.cube.cuboid.CuboidUtil;
 import org.apache.kylin.cube.model.CubeDesc;
 import org.apache.kylin.cube.model.CubeJoinedFlatTableEnrich;
+import org.apache.kylin.cube.util.KeyValueBuilder;
 import org.apache.kylin.dict.DictionaryGenerator;
 import org.apache.kylin.dict.IDictionaryBuilder;
 import org.apache.kylin.engine.EngineFactory;
@@ -164,90 +165,93 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
         conf.set("spark.kryo.registrationRequired", "true").registerKryoClasses(kryoClassArray);
 
         KylinSparkJobListener jobListener = new KylinSparkJobListener();
-        JavaSparkContext sc = new JavaSparkContext(conf);
-        sc.sc().addSparkListener(jobListener);
-        HadoopUtil.deletePath(sc.hadoopConfiguration(), new Path(outputPath));
+        try (JavaSparkContext sc = new JavaSparkContext(conf)) {
+            sc.sc().addSparkListener(jobListener);
+            HadoopUtil.deletePath(sc.hadoopConfiguration(), new Path(outputPath));
 
-        final SerializableConfiguration sConf = new SerializableConfiguration(sc.hadoopConfiguration());
-        KylinConfig envConfig = AbstractHadoopJob.loadKylinConfigFromHdfs(sConf, metaUrl);
+            final SerializableConfiguration sConf = new SerializableConfiguration(sc.hadoopConfiguration());
+            KylinConfig envConfig = AbstractHadoopJob.loadKylinConfigFromHdfs(sConf, metaUrl);
 
-        final CubeInstance cubeInstance = CubeManager.getInstance(envConfig).getCube(cubeName);
+            final CubeInstance cubeInstance = CubeManager.getInstance(envConfig).getCube(cubeName);
 
-        final Job job = Job.getInstance(sConf.get());
+            final Job job = Job.getInstance(sConf.get());
 
-        final FactDistinctColumnsReducerMapping reducerMapping = new FactDistinctColumnsReducerMapping(cubeInstance);
+            final FactDistinctColumnsReducerMapping reducerMapping = new FactDistinctColumnsReducerMapping(
+                    cubeInstance);
 
-        logger.info("RDD Output path: {}", outputPath);
-        logger.info("getTotalReducerNum: {}", reducerMapping.getTotalReducerNum());
-        logger.info("getCuboidRowCounterReducerNum: {}", reducerMapping.getCuboidRowCounterReducerNum());
-        logger.info("counter path {}", counterPath);
+            logger.info("RDD Output path: {}", outputPath);
+            logger.info("getTotalReducerNum: {}", reducerMapping.getTotalReducerNum());
+            logger.info("getCuboidRowCounterReducerNum: {}", reducerMapping.getCuboidRowCounterReducerNum());
+            logger.info("counter path {}", counterPath);
 
-        boolean isSequenceFile = JoinedFlatTable.SEQUENCEFILE.equalsIgnoreCase(envConfig.getFlatTableStorageFormat());
+            boolean isSequenceFile = JoinedFlatTable.SEQUENCEFILE
+                    .equalsIgnoreCase(envConfig.getFlatTableStorageFormat());
 
-        // calculate source record bytes size
-        final LongAccumulator bytesWritten = sc.sc().longAccumulator();
+            // calculate source record bytes size
+            final LongAccumulator bytesWritten = sc.sc().longAccumulator();
 
-        final JavaRDD<String[]> recordRDD = SparkUtil.hiveRecordInputRDD(isSequenceFile, sc, inputPath, hiveTable);
+            final JavaRDD<String[]> recordRDD = SparkUtil.hiveRecordInputRDD(isSequenceFile, sc, inputPath, hiveTable);
 
-        JavaPairRDD<SelfDefineSortableKey, Text> flatOutputRDD = recordRDD.mapPartitionsToPair(
-                new FlatOutputFucntion(cubeName, segmentId, metaUrl, sConf, samplingPercent, bytesWritten));
+            JavaPairRDD<SelfDefineSortableKey, Text> flatOutputRDD = recordRDD.mapPartitionsToPair(
+                    new FlatOutputFucntion(cubeName, segmentId, metaUrl, sConf, samplingPercent, bytesWritten));
 
-        JavaPairRDD<SelfDefineSortableKey, Iterable<Text>> aggredRDD = flatOutputRDD
-                .groupByKey(new FactDistinctPartitioner(cubeName, metaUrl, sConf, reducerMapping.getTotalReducerNum()));
+            JavaPairRDD<SelfDefineSortableKey, Iterable<Text>> aggredRDD = flatOutputRDD.groupByKey(
+                    new FactDistinctPartitioner(cubeName, metaUrl, sConf, reducerMapping.getTotalReducerNum()));
 
-        JavaPairRDD<String, Tuple3<Writable, Writable, String>> outputRDD = aggredRDD
-                .mapPartitionsToPair(new MultiOutputFunction(cubeName, metaUrl, sConf, samplingPercent));
+            JavaPairRDD<String, Tuple3<Writable, Writable, String>> outputRDD = aggredRDD
+                    .mapPartitionsToPair(new MultiOutputFunction(cubeName, metaUrl, sConf, samplingPercent));
 
-        // make each reducer output to respective dir
-        MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_COLUMN, SequenceFileOutputFormat.class,
-                NullWritable.class, Text.class);
-        MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_DICT, SequenceFileOutputFormat.class,
-                NullWritable.class, ArrayPrimitiveWritable.class);
-        MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_STATISTICS, SequenceFileOutputFormat.class,
-                LongWritable.class, BytesWritable.class);
-        MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_PARTITION, TextOutputFormat.class,
-                NullWritable.class, LongWritable.class);
+            // make each reducer output to respective dir
+            MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_COLUMN, SequenceFileOutputFormat.class,
+                    NullWritable.class, Text.class);
+            MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_DICT, SequenceFileOutputFormat.class,
+                    NullWritable.class, ArrayPrimitiveWritable.class);
+            MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_STATISTICS, SequenceFileOutputFormat.class,
+                    LongWritable.class, BytesWritable.class);
+            MultipleOutputs.addNamedOutput(job, BatchConstants.CFG_OUTPUT_PARTITION, TextOutputFormat.class,
+                    NullWritable.class, LongWritable.class);
 
-        FileOutputFormat.setOutputPath(job, new Path(outputPath));
-        FileOutputFormat.setCompressOutput(job, false);
+            FileOutputFormat.setOutputPath(job, new Path(outputPath));
+            FileOutputFormat.setCompressOutput(job, false);
 
-        // prevent to create zero-sized default output
-        LazyOutputFormat.setOutputFormatClass(job, SequenceFileOutputFormat.class);
+            // prevent to create zero-sized default output
+            LazyOutputFormat.setOutputFormatClass(job, SequenceFileOutputFormat.class);
 
+            MultipleOutputsRDD multipleOutputsRDD = MultipleOutputsRDD.rddToMultipleOutputsRDD(outputRDD);
 
-        MultipleOutputsRDD multipleOutputsRDD = MultipleOutputsRDD.rddToMultipleOutputsRDD(outputRDD);
+            multipleOutputsRDD.saveAsNewAPIHadoopDatasetWithMultipleOutputs(job.getConfiguration());
 
-        multipleOutputsRDD.saveAsNewAPIHadoopDatasetWithMultipleOutputs(job.getConfiguration());
+            long recordCount = recordRDD.count();
+            logger.info("Map input records={}", recordCount);
+            logger.info("HDFS Read: {} HDFS Write", bytesWritten.value());
 
-        long recordCount = recordRDD.count();
-        logger.info("Map input records={}", recordCount);
-        logger.info("HDFS Read: {} HDFS Write", bytesWritten.value());
+            Map<String, String> counterMap = Maps.newHashMap();
+            counterMap.put(ExecutableConstants.SOURCE_RECORDS_COUNT, String.valueOf(recordCount));
+            counterMap.put(ExecutableConstants.SOURCE_RECORDS_SIZE, String.valueOf(bytesWritten.value()));
 
-        Map<String, String> counterMap = Maps.newHashMap();
-        counterMap.put(ExecutableConstants.SOURCE_RECORDS_COUNT, String.valueOf(recordCount));
-        counterMap.put(ExecutableConstants.SOURCE_RECORDS_SIZE, String.valueOf(bytesWritten.value()));
+            // save counter to hdfs
+            HadoopUtil.writeToSequenceFile(sc.hadoopConfiguration(), counterPath, counterMap);
 
-        // save counter to hdfs
-        HadoopUtil.writeToSequenceFile(sc.hadoopConfiguration(), counterPath, counterMap);
-
-        HadoopUtil.deleteHDFSMeta(metaUrl);
+            HadoopUtil.deleteHDFSMeta(metaUrl);
+        }
     }
 
     static class FlatOutputFucntion implements PairFlatMapFunction<Iterator<String[]>, SelfDefineSortableKey, Text> {
-        private volatile transient boolean initialized = false;
+        private transient volatile boolean initialized = false;
         private String cubeName;
         private String segmentId;
         private String metaUrl;
         private SerializableConfiguration conf;
         private int samplingPercent;
-        private CuboidStatCalculator cuboidStatCalculator;
-        private FactDistinctColumnsReducerMapping reducerMapping;
+        private transient CuboidStatCalculator cuboidStatCalculator;
+        private transient FactDistinctColumnsReducerMapping reducerMapping;
         private List<TblColRef> allCols;
         private int[] columnIndex;
-        private DictColDeduper dictColDeduper;
+        private transient DictColDeduper dictColDeduper;
         private Map<Integer, DimensionRangeInfo> dimensionRangeInfoMap;
-        private ByteBuffer tmpbuf;
+        private transient ByteBuffer tmpbuf;
         private LongAccumulator bytesWritten;
+        private KeyValueBuilder keyValueBuilder;
 
         public FlatOutputFucntion(String cubeName, String segmentId, String metaurl, SerializableConfiguration conf,
                 int samplingPercent, LongAccumulator bytesWritten) {
@@ -270,6 +274,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
                 CubeJoinedFlatTableEnrich intermediateTableDesc = new CubeJoinedFlatTableEnrich(
                         EngineFactory.getJoinedFlatTableDesc(cubeSegment), cubeDesc);
 
+                keyValueBuilder = new KeyValueBuilder(intermediateTableDesc);
                 reducerMapping = new FactDistinctColumnsReducerMapping(cubeInstance);
                 tmpbuf = ByteBuffer.allocate(4096);
 
@@ -315,7 +320,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
 
                 for (int i = 0; i < allCols.size(); i++) {
                     String fieldValue = row[columnIndex[i]];
-                    if (fieldValue == null)
+                    if (fieldValue == null || keyValueBuilder.isNull(fieldValue))
                         continue;
 
                     final DataType type = allCols.get(i).getType();
@@ -374,8 +379,9 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
                 result.add(new Tuple2<SelfDefineSortableKey, Text>(sortableKey, outputValue));
             }
 
-            for (Integer colIndex : dimensionRangeInfoMap.keySet()) {
-                DimensionRangeInfo rangeInfo = dimensionRangeInfoMap.get(colIndex);
+            for (Map.Entry<Integer, DimensionRangeInfo> entry : dimensionRangeInfoMap.entrySet()) {
+                int colIndex = entry.getKey();
+                DimensionRangeInfo rangeInfo = entry.getValue();
                 DataType dataType = allCols.get(colIndex).getType();
                 addFieldValue(dataType, colIndex, rangeInfo.getMin(), result);
                 addFieldValue(dataType, colIndex, rangeInfo.getMax(), result);
@@ -458,7 +464,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
 
             // log a few rows for troubleshooting
             if (result.size() < 10) {
-                logger.info("Sample output: " + allCols.get(colIndex) + " '" + value + "' => reducer " + reducerIndex);
+                logger.info("Sample output: {} '{}' => reducer {}", allCols.get(colIndex), value, reducerIndex);
             }
         }
 
@@ -485,7 +491,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
         private final int[] rowkeyColIndex;
         private final Long[] cuboidIds;
         private final Integer[][] cuboidsBitSet;
-        private volatile HLLCounter[] cuboidsHLL;
+        private HLLCounter[] cuboidsHLL;
 
         //about details of the new algorithm, please see KYLIN-2518
         private final boolean isNewAlgorithm;
@@ -573,12 +579,12 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
     }
 
     static class FactDistinctPartitioner extends Partitioner {
-        private volatile transient boolean initialized = false;
+        private transient volatile boolean initialized = false;
         private String cubeName;
         private String metaUrl;
         private SerializableConfiguration conf;
         private int totalReducerNum;
-        private FactDistinctColumnsReducerMapping reducerMapping;
+        private transient FactDistinctColumnsReducerMapping reducerMapping;
 
         public FactDistinctPartitioner(String cubeName, String metaUrl, SerializableConfiguration conf,
                 int totalReducerNum) {
@@ -626,14 +632,14 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
 
     static class MultiOutputFunction implements
             PairFlatMapFunction<Iterator<Tuple2<SelfDefineSortableKey, Iterable<Text>>>, String, Tuple3<Writable, Writable, String>> {
-        private volatile transient boolean initialized = false;
+        private transient volatile boolean initialized = false;
         private String DICT_FILE_POSTFIX = ".rldict";
         private String DIMENSION_COL_INFO_FILE_POSTFIX = ".dci";
         private String cubeName;
         private String metaUrl;
         private SerializableConfiguration conf;
         private int samplingPercent;
-        private FactDistinctColumnsReducerMapping reducerMapping;
+        private transient FactDistinctColumnsReducerMapping reducerMapping;
         private int taskId;
         private boolean isStatistics = false;
         private long baseCuboidId;
@@ -641,7 +647,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
         private Map<Long, HLLCounter> cuboidHLLMap;
         private TblColRef col;
         private boolean buildDictInReducer;
-        private IDictionaryBuilder builder;
+        private transient IDictionaryBuilder builder;
         private int rowCount = 0;
         private long totalRowsBeforeMerge = 0;
         private KylinConfig cubeConfig;
@@ -677,7 +683,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
                     baseCuboidRowCountInMappers = Lists.newArrayList();
                     cuboidHLLMap = Maps.newHashMap();
 
-                    logger.info("Partition " + taskId + " handling stats");
+                    logger.info("Partition {} handling stats", taskId);
                 } else {
                     // normal col
                     col = reducerMapping.getColForReducer(taskId);
@@ -697,8 +703,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
                         builder = DictionaryGenerator.newDictionaryBuilder(col.getType());
                         builder.init(null, 0, null);
                     }
-                    logger.info("Partition " + taskId + " handling column " + col + ", buildDictInReducer="
-                            + buildDictInReducer);
+                    logger.info("Partition {} handling column {}, buildDictInReducer={}", taskId, col, buildDictInReducer);
                 }
 
                 initialized = true;
@@ -707,7 +712,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
 
         private void logAFewRows(String value) {
             if (rowCount < 10) {
-                logger.info("Received value: " + value);
+                logger.info("Received value: {}", value);
             }
         }
 
@@ -753,7 +758,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
                     String value = Bytes.toString(key.getBytes(), 1, key.getLength() - 1);
                     logAFewRows(value);
                     // if dimension col, compute max/min value
-                    if (cubeDesc.listDimensionColumnsExcludingDerived(true).contains(col)) {
+                    if (cubeDesc.listDimensionColumnsExcludingDerived(true).contains(col) && col.getType().needCompare()) {
                         if (minValue == null || col.getType().compare(minValue, value) > 0) {
                             minValue = value;
                         }
@@ -781,7 +786,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
             }
 
             if (isStatistics) {
-                //output the hll info;
+                //output the hll info
                 List<Long> allCuboids = Lists.newArrayList();
                 allCuboids.addAll(cuboidHLLMap.keySet());
                 Collections.sort(allCuboids);
@@ -803,26 +808,26 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
             return result.iterator();
         }
 
-        private void logMapperAndCuboidStatistics(List<Long> allCuboids) throws IOException {
-            logger.info("Cuboid number for task: " + taskId + "\t" + allCuboids.size());
-            logger.info("Samping percentage: \t" + samplingPercent);
+        private void logMapperAndCuboidStatistics(List<Long> allCuboids) {
+            logger.info("Cuboid number for task: {}\t{}", taskId, allCuboids.size());
+            logger.info("Samping percentage: \t{}", samplingPercent);
             logger.info("The following statistics are collected based on sampling data. ");
-            logger.info("Number of Mappers: " + baseCuboidRowCountInMappers.size());
+            logger.info("Number of Mappers: {}", baseCuboidRowCountInMappers.size());
 
             for (int i = 0; i < baseCuboidRowCountInMappers.size(); i++) {
                 if (baseCuboidRowCountInMappers.get(i) > 0) {
-                    logger.info("Base Cuboid in Mapper " + i + " row count: \t " + baseCuboidRowCountInMappers.get(i));
+                    logger.info("Base Cuboid in Mapper {} row count: \t {}", i, baseCuboidRowCountInMappers.get(i));
                 }
             }
 
             long grantTotal = 0;
             for (long i : allCuboids) {
                 grantTotal += cuboidHLLMap.get(i).getCountEstimate();
-                logger.info("Cuboid " + i + " row count is: \t " + cuboidHLLMap.get(i).getCountEstimate());
+                logger.info("Cuboid {} row count is: \t {}", i, cuboidHLLMap.get(i).getCountEstimate());
             }
 
-            logger.info("Sum of row counts (before merge) is: \t " + totalRowsBeforeMerge);
-            logger.info("After merge, the row count: \t " + grantTotal);
+            logger.info("Sum of row counts (before merge) is: \t {}", totalRowsBeforeMerge);
+            logger.info("After merge, the row count: \t {}", grantTotal);
         }
 
         private void outputDimRangeInfo(List<Tuple2<String, Tuple3<Writable, Writable, String>>> result) {
@@ -836,14 +841,13 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
                 result.add(new Tuple2<String, Tuple3<Writable, Writable, String>>(BatchConstants.CFG_OUTPUT_PARTITION,
                         new Tuple3<Writable, Writable, String>(NullWritable.get(),
                                 new Text(maxValue.getBytes(StandardCharsets.UTF_8)), dimRangeFileName)));
-                logger.info("write dimension range info for col : " + col.getName() + "  minValue:" + minValue
-                        + " maxValue:" + maxValue);
+                logger.info("write dimension range info for col : {}  minValue:{} maxValue:{}", col.getName(), minValue, maxValue);
             }
         }
 
         private void outputDict(TblColRef col, Dictionary<String> dict,
                 List<Tuple2<String, Tuple3<Writable, Writable, String>>> result)
-                throws IOException, InterruptedException {
+                throws IOException {
             // output written to baseDir/colName/colName.rldict-r-00000 (etc)
             String dictFileName = col.getIdentity() + "/" + col.getName() + DICT_FILE_POSTFIX;
 
@@ -860,7 +864,7 @@ public class SparkFactDistinct extends AbstractApplication implements Serializab
 
         private void outputStatistics(List<Long> allCuboids,
                 List<Tuple2<String, Tuple3<Writable, Writable, String>>> result)
-                throws IOException, InterruptedException {
+                throws IOException {
             // output written to baseDir/statistics/statistics-r-00000 (etc)
             String statisticsFileName = BatchConstants.CFG_OUTPUT_STATISTICS + "/"
                     + BatchConstants.CFG_OUTPUT_STATISTICS;

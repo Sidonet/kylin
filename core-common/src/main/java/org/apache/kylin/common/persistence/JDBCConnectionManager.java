@@ -39,18 +39,13 @@ import java.util.Properties;
 public class JDBCConnectionManager {
 
     private static final Logger logger = LoggerFactory.getLogger(JDBCConnectionManager.class);
+    private static final String PASSWORD = "password";
 
     private static JDBCConnectionManager INSTANCE = null;
 
-    private static Object lock = new Object();
-
-    public static JDBCConnectionManager getConnectionManager() {
+    public static synchronized JDBCConnectionManager getConnectionManager() {
         if (INSTANCE == null) {
-            synchronized (lock) {
-                if (INSTANCE == null) {
-                    INSTANCE = new JDBCConnectionManager(KylinConfig.getInstanceFromEnv());
-                }
-            }
+            INSTANCE = new JDBCConnectionManager(KylinConfig.getInstanceFromEnv());
         }
         return INSTANCE;
     }
@@ -67,10 +62,10 @@ public class JDBCConnectionManager {
             dataSource = BasicDataSourceFactory.createDataSource(getDbcpProperties());
             Connection conn = getConn();
             DatabaseMetaData mdm = conn.getMetaData();
-            logger.info("Connected to " + mdm.getDatabaseProductName() + " " + mdm.getDatabaseProductVersion());
+            logger.info("Connected to {0} {1}", mdm.getDatabaseProductName(), mdm.getDatabaseProductVersion());
             closeQuietly(conn);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new IllegalArgumentException(e);
         }
     }
 
@@ -80,7 +75,7 @@ public class JDBCConnectionManager {
         JDBCResourceStore.checkScheme(metadataUrl);
 
         LinkedHashMap<String, String> ret = new LinkedHashMap<>(metadataUrl.getAllParameters());
-        List<String> mandatoryItems = Arrays.asList("url", "username", "password");
+        List<String> mandatoryItems = Arrays.asList("url", "username", PASSWORD);
 
         for (String item : mandatoryItems) {
             Preconditions.checkNotNull(ret.get(item),
@@ -94,7 +89,7 @@ public class JDBCConnectionManager {
             ret.remove("passwordEncrypted");
         }
 
-        logger.info("Connecting to Jdbc with url:" + ret.get("url") + " by user " + ret.get("username"));
+        logger.info("Connecting to Jdbc with url:{0} by user {1}", ret.get("url"), ret.get("username"));
 
         putIfMissing(ret, "driverClassName", "com.mysql.jdbc.Driver");
         putIfMissing(ret, "maxActive", "5");

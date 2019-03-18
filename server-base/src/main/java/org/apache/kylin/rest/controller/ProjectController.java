@@ -130,8 +130,8 @@ public class ProjectController extends BasicController {
         if (!ValidateUtil.isAlphanumericUnderscore(projectDesc.getName())) {
             throw new BadRequestException(
                     String.format(Locale.ROOT,
-                            "Invalid Project name %s, only letters, numbers and underscore " + "supported."),
-                    projectDesc.getName());
+                            "Invalid Project name %s, only letters, numbers and underscore supported.",
+                    projectDesc.getName()));
         }
 
         ProjectInstance createdProj = null;
@@ -193,7 +193,11 @@ public class ProjectController extends BasicController {
         try {
 
             ProjectInstance project = projectService.getProjectManager().getProject(projectName);
-            projectService.deleteProject(projectName, project);
+            if (project != null) {
+                projectService.deleteProject(projectName, project);
+            } else {
+                logger.info("Project {} not exists", projectName);
+            }
         } catch (Exception e) {
             logger.error(e.getLocalizedMessage(), e);
             throw new InternalErrorException("Failed to delete project. " + " Caused by: " + e.getMessage(), e);
